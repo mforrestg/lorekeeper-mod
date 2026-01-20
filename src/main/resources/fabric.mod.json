@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
-	"id": "modid",
+	"id": "lorekeeper",
 	"version": "${version}",
-	"name": "Example mod",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "Lorekeeper",
+	"description": "A mysterious wandering archivist who publishes server history.",
 	"authors": [
 		"Me!"
 	],
@@ -12,22 +12,18 @@
 		"sources": "https://github.com/FabricMC/fabric-example-mod"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/modid/icon.png",
+	"icon": "assets/lorekeeper/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"com.example.ExampleMod"
+			"com.example.LorekeeperMod"
 		],
 		"client": [
-			"com.example.ExampleModClient"
+			"com.example.LorekeeperClientMod"
 		]
 	},
 	"mixins": [
-		"modid.mixins.json",
-		{
-			"config": "modid.client.mixins.json",
-			"environment": "client"
-		}
+		"lorekeeper.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.18.2",

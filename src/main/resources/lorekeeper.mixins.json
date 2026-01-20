@@ -3,7 +3,8 @@
 	"package": "com.example.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+		"LorekeeperMixin",
+		"TradeOutputSlotMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
