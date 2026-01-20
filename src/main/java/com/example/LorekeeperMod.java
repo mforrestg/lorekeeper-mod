@@ -24,6 +24,7 @@ public class LorekeeperMod implements ModInitializer {
 		CONFIG = LorekeeperConfig.load();
 		LorekeeperEntities.register();
 		LorekeeperItems.register();
+		LorekeeperChatListener.register();
 		LoreCommand.register();
 	}
 }

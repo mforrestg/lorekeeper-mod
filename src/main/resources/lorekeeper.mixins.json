@@ -3,6 +3,7 @@
 	"package": "com.example.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
+		"BlockItemMixin",
 		"LorekeeperMixin",
 		"TradeOutputSlotMixin"
 	],

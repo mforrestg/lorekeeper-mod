@@ -112,8 +112,40 @@ public final class LoreStorage extends PersistentState {
         return new ArrayList<>(snapshot);
     }
 
+    public List<LoreEntry> getNewsSnapshot(long day) {
+        List<LoreEntry> existing = newsByDay.get(day);
+        return existing == null ? null : new ArrayList<>(existing);
+    }
+
+    public boolean hasNewsSnapshot(long day) {
+        return newsByDay.containsKey(day);
+    }
+
     public List<LoreEntry> getAllEntries() {
         return new ArrayList<>(entries);
+    }
+
+    public int getEntryCount() {
+        return entries.size();
+    }
+
+    public LoreEntry removeEntryAt(int index) {
+        if (index < 0 || index >= entries.size()) {
+            return null;
+        }
+        LoreEntry removed = entries.remove(index);
+        for (List<LoreEntry> snapshot : newsByDay.values()) {
+            snapshot.removeIf(entry -> entry.equals(removed));
+        }
+        markDirty();
+        return removed;
+    }
+
+    public void clearAll() {
+        entries.clear();
+        newsByDay.clear();
+        issueCounter = 0;
+        markDirty();
     }
 
     private List<LoreEntry> getEntries() {
