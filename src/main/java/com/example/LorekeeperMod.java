@@ -25,6 +25,7 @@ public class LorekeeperMod implements ModInitializer {
 		LorekeeperEntities.register();
 		LorekeeperItems.register();
 		LorekeeperChatListener.register();
+		LorekeeperEncounterEvents.register();
 		LoreCommand.register();
 	}
 }

@@ -2,7 +2,6 @@ package com.example.mixin;
 
 import com.example.LorekeeperEncounters;
 import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -25,9 +24,6 @@ public abstract class BlockItemMixin {
         if (result == null || !result.isAccepted()) {
             return;
         }
-        if (getBlock() != Blocks.CRAFTING_TABLE) {
-            return;
-        }
         World world = context.getWorld();
         if (!(world instanceof ServerWorld serverWorld)) {
             return;
@@ -36,6 +32,6 @@ public abstract class BlockItemMixin {
             return;
         }
 
-        LorekeeperEncounters.handleCraftingTablePlaced(serverWorld, player, context.getBlockPos());
+        LorekeeperEncounters.handleBlockPlaced(serverWorld, player, context.getBlockPos(), getBlock());
     }
 }
