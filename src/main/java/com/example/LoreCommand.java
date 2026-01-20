@@ -98,19 +98,20 @@ public final class LoreCommand {
     }
 
     private static int sendNews(CommandContext<ServerCommandSource> ctx) {
-        LoreStorage storage = LoreStorage.get(ctx.getSource().getServer());
-        long dayNumber = LoreStorage.getCurrentDay(ctx.getSource().getServer());
-        List<LoreStorage.LoreEntry> entries = storage.getOrCreateNewsSnapshot(dayNumber, LoreBooks.NEWS_ENTRY_LIMIT);
+        LorekeeperNewsPublisher.PublishResult result =
+            LorekeeperNewsPublisher.publishWeeklyNews(ctx.getSource().getServer(), true);
+        long weekNumber = result.weekNumber();
+        List<LoreStorage.LoreEntry> entries = result.entries();
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player != null) {
-            ItemStack book = LoreBooks.createNewsBook(entries, dayNumber);
+            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber);
             if (!player.giveItemStack(book)) {
                 ctx.getSource().sendError(Text.literal("Inventory full; couldn't deliver the news book."));
                 return 0;
             }
             ctx.getSource().sendFeedback(() -> Text.literal("A news book has been delivered."), false);
         } else {
-            String header = LoreBooks.formatNewsHeader(dayNumber);
+            String header = LoreBooks.formatNewsHeader(weekNumber);
             ctx.getSource().sendFeedback(() -> Text.literal(header), false);
             for (LoreStorage.LoreEntry entry : entries) {
                 ctx.getSource().sendFeedback(() -> Text.literal(LoreBooks.formatEntry(entry)), false);
@@ -196,29 +197,33 @@ public final class LoreCommand {
         int count = storage.getEntryCount();
         storage.clearAll();
         ctx.getSource().sendFeedback(
-            () -> Text.literal("Cleared " + count + " lore entries and all daily news snapshots."),
+            () -> Text.literal("Cleared " + count + " lore entries and all weekly news snapshots."),
             false
         );
         return count;
     }
 
     private static int publishNews(CommandContext<ServerCommandSource> ctx) {
-        LoreStorage storage = LoreStorage.get(ctx.getSource().getServer());
-        long dayNumber = LoreStorage.getCurrentDay(ctx.getSource().getServer());
-        boolean alreadyPublished = storage.hasNewsSnapshot(dayNumber);
-        List<LoreStorage.LoreEntry> entries = storage.getOrCreateNewsSnapshot(dayNumber, LoreBooks.NEWS_ENTRY_LIMIT);
-        if (alreadyPublished) {
-            ctx.getSource().sendFeedback(() -> Text.literal("News for day " + dayNumber + " was already published."), false);
+        LorekeeperNewsPublisher.PublishResult result =
+            LorekeeperNewsPublisher.publishWeeklyNews(ctx.getSource().getServer(), true);
+        if (result.alreadyPublished()) {
+            ctx.getSource().sendFeedback(
+                () -> Text.literal("News for week " + result.weekNumber() + " was already published."),
+                false
+            );
         } else {
-            ctx.getSource().sendFeedback(() -> Text.literal("Published news for day " + dayNumber + "."), false);
+            ctx.getSource().sendFeedback(
+                () -> Text.literal("Published news for week " + result.weekNumber() + "."),
+                false
+            );
         }
-        return entries.size();
+        return result.entries().size();
     }
 
     private static int previewNews(CommandContext<ServerCommandSource> ctx) {
         LoreStorage storage = LoreStorage.get(ctx.getSource().getServer());
-        long dayNumber = LoreStorage.getCurrentDay(ctx.getSource().getServer());
-        List<LoreStorage.LoreEntry> entries = storage.getNewsSnapshot(dayNumber);
+        long weekNumber = LoreStorage.getCurrentWeek(ctx.getSource().getServer());
+        List<LoreStorage.LoreEntry> entries = storage.getNewsSnapshot(weekNumber);
         boolean published = entries != null;
         if (entries == null) {
             entries = storage.getLatestEntries(LoreBooks.NEWS_ENTRY_LIMIT);
@@ -226,7 +231,7 @@ public final class LoreCommand {
 
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player != null) {
-            ItemStack book = LoreBooks.createNewsBook(entries, dayNumber);
+            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber);
             if (!player.giveItemStack(book)) {
                 ctx.getSource().sendError(Text.literal("Inventory full; couldn't deliver the preview book."));
                 return 0;
@@ -234,7 +239,7 @@ public final class LoreCommand {
             String label = published ? "Published news preview delivered." : "Preview book delivered (not yet published).";
             ctx.getSource().sendFeedback(() -> Text.literal(label), false);
         } else {
-            String header = LoreBooks.formatNewsHeader(dayNumber);
+            String header = LoreBooks.formatNewsHeader(weekNumber);
             String suffix = published ? " (published)" : " (preview)";
             ctx.getSource().sendFeedback(() -> Text.literal(header + suffix), false);
             for (LoreStorage.LoreEntry entry : entries) {

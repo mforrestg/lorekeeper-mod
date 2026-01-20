@@ -17,7 +17,7 @@ public final class LoreBooks {
     public static final int MAX_LINE_LENGTH = 32;
     public static final int MAX_LINES_PER_PAGE = 14;
     public static final int MAX_PAGES = 100;
-    public static final String NEWS_TITLE_PREFIX = "Lorekeeper Gazette — Day ";
+    public static final String NEWS_TITLE_PREFIX = "Lorekeeper Gazette — Week ";
 
     private static final DateTimeFormatter NEWS_HEADER_FORMAT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
@@ -26,9 +26,9 @@ public final class LoreBooks {
 
     private LoreBooks() {}
 
-    public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long dayNumber) {
-        String content = buildNewsText(entries, dayNumber);
-        return buildBook(buildNewsTitle(dayNumber), "Lorekeeper", content);
+    public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long weekNumber) {
+        String content = buildNewsText(entries, weekNumber);
+        return buildBook(buildNewsTitle(weekNumber), "Lorekeeper", content);
     }
 
     public static ItemStack createHistoryBook(List<LoreStorage.LoreEntry> entries) {
@@ -36,8 +36,8 @@ public final class LoreBooks {
         return buildBook("Lorekeeper Archive", "Lorekeeper", content);
     }
 
-    public static String formatNewsHeader(long dayNumber) {
-        return "Lorekeeper Gazette — Day " + dayNumber + " (" + NEWS_HEADER_FORMAT.format(Instant.now()) + ")";
+    public static String formatNewsHeader(long weekNumber) {
+        return "Lorekeeper Gazette — Week " + weekNumber + " (" + NEWS_HEADER_FORMAT.format(Instant.now()) + ")";
     }
 
     public static String formatEntry(LoreStorage.LoreEntry entry) {
@@ -83,14 +83,14 @@ public final class LoreBooks {
         return book;
     }
 
-    private static String buildNewsTitle(long dayNumber) {
-        return NEWS_TITLE_PREFIX + dayNumber;
+    private static String buildNewsTitle(long weekNumber) {
+        return NEWS_TITLE_PREFIX + weekNumber;
     }
 
-    private static String buildNewsText(List<LoreStorage.LoreEntry> entries, long dayNumber) {
+    private static String buildNewsText(List<LoreStorage.LoreEntry> entries, long weekNumber) {
         StringBuilder builder = new StringBuilder();
         builder.append("THE LOREKEEPER GAZETTE").append("\n");
-        builder.append("Day ").append(dayNumber).append(" — ")
+        builder.append("Week ").append(weekNumber).append(" — ")
             .append(NEWS_HEADER_FORMAT.format(Instant.now())).append("\n");
         builder.append("----------------------------------------").append("\n\n");
         builder.append("Headlines").append("\n\n");

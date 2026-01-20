@@ -50,9 +50,9 @@ public class LorekeeperEntity extends WanderingTraderEntity {
         offers.clear();
 
         LoreStorage storage = LoreStorage.get(world.getServer());
-        long dayNumber = LoreStorage.getCurrentDay(world.getServer());
-        List<LoreStorage.LoreEntry> snapshot = storage.getOrCreateNewsSnapshot(dayNumber, LoreBooks.NEWS_ENTRY_LIMIT);
-        ItemStack newsBook = LoreBooks.createNewsBook(snapshot, dayNumber);
+        LorekeeperNewsPublisher.PublishResult result =
+            LorekeeperNewsPublisher.publishWeeklyNews(world.getServer(), true);
+        ItemStack newsBook = LoreBooks.createNewsBook(result.entries(), result.weekNumber());
         ItemStack historyBook = LoreBooks.createHistoryBook(storage.getAllEntries());
 
         offers.add(new TradeOffer(

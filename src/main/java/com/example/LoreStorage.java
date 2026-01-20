@@ -65,6 +65,10 @@ public final class LoreStorage extends PersistentState {
         return server.getOverworld().getTimeOfDay() / 24000L;
     }
 
+    public static long getCurrentWeek(MinecraftServer server) {
+        return getCurrentDay(server) / 7L;
+    }
+
     public void addEntry(LoreEntry entry) {
         entries.add(entry);
         if (entries.size() > MAX_ENTRIES) {
