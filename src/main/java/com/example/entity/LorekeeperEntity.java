@@ -2,6 +2,7 @@ package com.example.entity;
 
 import com.example.LoreBooks;
 import com.example.LoreStorage;
+import com.example.LorekeeperNewsPublisher;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.entity.EntityType;
