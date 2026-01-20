@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 public class LorekeeperMod implements ModInitializer {
 	public static final String MOD_ID = "lorekeeper";
+	public static LorekeeperConfig CONFIG;
 
 	// This logger is used to write text to the console and the log file.
 	// It is considered best practice to use your mod id as the logger's name.
@@ -20,6 +21,7 @@ public class LorekeeperMod implements ModInitializer {
 		// Proceed with mild caution.
 
 		LOGGER.info("Lorekeeper initialized");
+		CONFIG = LorekeeperConfig.load();
 		LorekeeperEntities.register();
 		LorekeeperItems.register();
 		LoreCommand.register();
