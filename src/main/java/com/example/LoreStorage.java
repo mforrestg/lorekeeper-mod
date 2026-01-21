@@ -26,10 +26,21 @@ public final class LoreStorage extends PersistentState {
         ENTRY_CODEC.listOf().fieldOf("entries").forGetter(DailyNews::entries)
     ).apply(instance, DailyNews::new));
 
+    private static final Codec<WeeklySummary> WEEKLY_SUMMARY_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+        Codec.LONG.fieldOf("week").forGetter(WeeklySummary::week),
+        Codec.STRING.fieldOf("summary").forGetter(WeeklySummary::summary)
+    ).apply(instance, WeeklySummary::new));
+
     private static final Codec<LoreStorage> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         ENTRY_CODEC.listOf().fieldOf("entries").forGetter(LoreStorage::getEntries),
         DAILY_NEWS_CODEC.listOf().optionalFieldOf("news_by_day", List.of()).forGetter(LoreStorage::getNewsList),
-        Codec.INT.optionalFieldOf("issue", 0).forGetter(LoreStorage::getIssueCounter)
+        Codec.INT.optionalFieldOf("issue", 0).forGetter(LoreStorage::getIssueCounter),
+        WEEKLY_SUMMARY_CODEC.listOf().optionalFieldOf("ai_news_by_week", List.of())
+            .forGetter(LoreStorage::getAiNewsList),
+        Codec.STRING.optionalFieldOf("ai_history_summary", "")
+            .forGetter(LoreStorage::getAiHistorySummary),
+        Codec.LONG.optionalFieldOf("ai_history_timestamp", 0L)
+            .forGetter(LoreStorage::getAiHistoryTimestamp)
     ).apply(instance, LoreStorage::new));
 
     public static final PersistentStateType<LoreStorage> STATE_TYPE = new PersistentStateType<>(
@@ -41,19 +52,35 @@ public final class LoreStorage extends PersistentState {
 
     private final List<LoreEntry> entries;
     private final Map<Long, List<LoreEntry>> newsByDay;
+    private final Map<Long, String> aiNewsByWeek;
     private int issueCounter;
+    private String aiHistorySummary;
+    private long aiHistoryTimestamp;
 
     public LoreStorage() {
-        this(new ArrayList<>(), List.of(), 0);
+        this(new ArrayList<>(), List.of(), 0, List.of(), "", 0L);
     }
 
-    public LoreStorage(List<LoreEntry> entries, List<DailyNews> newsByDay, int issueCounter) {
+    public LoreStorage(
+        List<LoreEntry> entries,
+        List<DailyNews> newsByDay,
+        int issueCounter,
+        List<WeeklySummary> weeklySummaries,
+        String aiHistorySummary,
+        long aiHistoryTimestamp
+    ) {
         this.entries = new ArrayList<>(entries);
         this.newsByDay = new LinkedHashMap<>();
         for (DailyNews news : newsByDay) {
             this.newsByDay.put(news.day, new ArrayList<>(news.entries));
         }
         this.issueCounter = issueCounter;
+        this.aiNewsByWeek = new LinkedHashMap<>();
+        for (WeeklySummary summary : weeklySummaries) {
+            this.aiNewsByWeek.put(summary.week, summary.summary);
+        }
+        this.aiHistorySummary = aiHistorySummary == null ? "" : aiHistorySummary;
+        this.aiHistoryTimestamp = aiHistoryTimestamp;
     }
 
     public static LoreStorage get(MinecraftServer server) {
@@ -74,6 +101,8 @@ public final class LoreStorage extends PersistentState {
         if (entries.size() > MAX_ENTRIES) {
             entries.remove(0);
         }
+        aiHistorySummary = "";
+        aiHistoryTimestamp = 0L;
         markDirty();
     }
 
@@ -141,6 +170,9 @@ public final class LoreStorage extends PersistentState {
         for (List<LoreEntry> snapshot : newsByDay.values()) {
             snapshot.removeIf(entry -> entry.equals(removed));
         }
+        aiNewsByWeek.clear();
+        aiHistorySummary = "";
+        aiHistoryTimestamp = 0L;
         markDirty();
         return removed;
     }
@@ -148,8 +180,47 @@ public final class LoreStorage extends PersistentState {
     public void clearAll() {
         entries.clear();
         newsByDay.clear();
+        aiNewsByWeek.clear();
         issueCounter = 0;
+        aiHistorySummary = "";
+        aiHistoryTimestamp = 0L;
         markDirty();
+    }
+
+    public String getAiNewsSummary(long week) {
+        return aiNewsByWeek.get(week);
+    }
+
+    public void setAiNewsSummary(long week, String summary) {
+        if (summary == null || summary.isBlank()) {
+            return;
+        }
+        aiNewsByWeek.put(week, summary);
+        markDirty();
+    }
+
+    public String getAiHistorySummary() {
+        return aiHistorySummary;
+    }
+
+    public long getAiHistoryTimestamp() {
+        return aiHistoryTimestamp;
+    }
+
+    public void setAiHistorySummary(String summary, long timestamp) {
+        if (summary == null || summary.isBlank()) {
+            return;
+        }
+        aiHistorySummary = summary;
+        aiHistoryTimestamp = timestamp;
+        markDirty();
+    }
+
+    public long getLatestEntryTimestamp() {
+        if (entries.isEmpty()) {
+            return 0L;
+        }
+        return entries.get(entries.size() - 1).timestamp();
     }
 
     private List<LoreEntry> getEntries() {
@@ -160,6 +231,14 @@ public final class LoreStorage extends PersistentState {
         List<DailyNews> list = new ArrayList<>(newsByDay.size());
         for (Map.Entry<Long, List<LoreEntry>> entry : newsByDay.entrySet()) {
             list.add(new DailyNews(entry.getKey(), new ArrayList<>(entry.getValue())));
+        }
+        return list;
+    }
+
+    private List<WeeklySummary> getAiNewsList() {
+        List<WeeklySummary> list = new ArrayList<>(aiNewsByWeek.size());
+        for (Map.Entry<Long, String> entry : aiNewsByWeek.entrySet()) {
+            list.add(new WeeklySummary(entry.getKey(), entry.getValue()));
         }
         return list;
     }
@@ -180,4 +259,6 @@ public final class LoreStorage extends PersistentState {
     public record LoreEntry(String text, String author, long timestamp) {}
 
     public record DailyNews(long day, List<LoreEntry> entries) {}
+
+    public record WeeklySummary(long week, String summary) {}
 }

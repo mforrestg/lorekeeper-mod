@@ -3,17 +3,23 @@ package com.example.entity;
 import com.example.LoreBooks;
 import com.example.LoreStorage;
 import com.example.LorekeeperNewsPublisher;
+import com.example.LorekeeperAiService;
 import java.util.List;
 import java.util.Optional;
+import net.minecraft.entity.ai.goal.HoldInHandsGoal;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.passive.WanderingTraderEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.village.TradeOffer;
 import net.minecraft.village.TradeOfferList;
 import net.minecraft.village.TradedItem;
@@ -26,11 +32,34 @@ public class LorekeeperEntity extends WanderingTraderEntity {
     private static final int MAX_USES = 12;
     private static final float PRICE_MULTIPLIER = 0.05f;
     private static final Text NAME = Text.literal("Lore Keeper");
+    private static final double MAX_WANDER_DISTANCE = 12.0;
+    private static final double RETURN_SPEED = 0.4;
+    private static final double BASE_SPEED = 0.35;
+
+    private BlockPos anchorPos;
 
     public LorekeeperEntity(EntityType<? extends WanderingTraderEntity> type, World world) {
         super(type, world);
         setCustomName(NAME);
         setCustomNameVisible(true);
+    }
+
+    @Override
+    protected void initGoals() {
+        super.initGoals();
+        goalSelector.clear(goal -> goal instanceof HoldInHandsGoal);
+    }
+
+    @Override
+    public void tickMovement() {
+        super.tickMovement();
+        if (getEntityWorld().isClient() || anchorPos == null) {
+            return;
+        }
+        Vec3d anchorCenter = Vec3d.ofCenter(anchorPos);
+        if (squaredDistanceTo(anchorCenter) > MAX_WANDER_DISTANCE * MAX_WANDER_DISTANCE) {
+            getNavigation().startMovingTo(anchorCenter.x, anchorCenter.y, anchorCenter.z, RETURN_SPEED);
+        }
     }
 
     @Override
@@ -53,8 +82,9 @@ public class LorekeeperEntity extends WanderingTraderEntity {
         LoreStorage storage = LoreStorage.get(world.getServer());
         LorekeeperNewsPublisher.PublishResult result =
             LorekeeperNewsPublisher.publishWeeklyNews(world.getServer(), true);
-        ItemStack newsBook = LoreBooks.createNewsBook(result.entries(), result.weekNumber());
-        ItemStack historyBook = LoreBooks.createHistoryBook(storage.getAllEntries());
+        ItemStack newsBook = LoreBooks.createNewsBook(result.entries(), result.weekNumber(), result.aiSummary());
+        String historySummary = LorekeeperAiService.getOrCreateHistorySummary(world.getServer(), storage.getAllEntries());
+        ItemStack historyBook = LoreBooks.createHistoryBook(storage.getAllEntries(), historySummary);
 
         offers.add(new TradeOffer(
             new TradedItem(Items.EMERALD, NEWS_PRICE),
@@ -80,5 +110,14 @@ public class LorekeeperEntity extends WanderingTraderEntity {
             0,
             PRICE_MULTIPLIER
         ));
+    }
+
+    public void setAnchorPos(BlockPos anchorPos) {
+        this.anchorPos = anchorPos;
+        setWanderTarget(anchorPos);
+        EntityAttributeInstance speed = getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+        if (speed != null) {
+            speed.setBaseValue(BASE_SPEED);
+        }
     }
 }

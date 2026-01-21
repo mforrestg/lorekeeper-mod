@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.ClickEvent;
@@ -53,6 +54,13 @@ public final class LorekeeperInterviewManager {
     );
     private static final Map<UUID, QuestionPool> PENDING = new HashMap<>();
     private static final Map<UUID, InterviewSession> ACTIVE = new HashMap<>();
+    private static final List<String> FALLBACK_REACTIONS = List.of(
+        "Noted. The archive grows richer.",
+        "Thank you. The record will remember this.",
+        "Interesting. I will keep it in the ledger.",
+        "A valuable detail. The story deepens.",
+        "So it shall be recorded."
+    );
 
     private LorekeeperInterviewManager() {}
 
@@ -118,6 +126,9 @@ public final class LorekeeperInterviewManager {
         if (session == null) {
             return false;
         }
+        if (session.awaitingReaction) {
+            return false;
+        }
         String trimmed = message.trim();
         if (trimmed.isEmpty()) {
             return false;
@@ -133,12 +144,27 @@ public final class LorekeeperInterviewManager {
         String entry = "Interview answer to \"" + question + "\": " + trimmed;
         storage.addEntryTextChunked(entry, player.getName().getString(), System.currentTimeMillis(), 500);
 
-        sendLorekeeperMessage(player, Text.literal("Noted. Thank you."));
         session.advance();
-        if (!askNextQuestion(player)) {
-            sendLorekeeperMessage(player, Text.literal("Our interview is complete."));
-            endInterview(player);
-        }
+        session.awaitingReaction = true;
+
+        CompletableFuture
+            .supplyAsync(() -> LorekeeperAiService.generateInterviewReaction(player.getName().getString(), question, trimmed))
+            .thenAccept(reaction -> world.getServer().execute(() -> {
+                InterviewSession current = ACTIVE.get(player.getUuid());
+                if (current == null) {
+                    return;
+                }
+                String line = reaction;
+                if (line == null || line.isBlank()) {
+                    line = pickFallbackReaction(player);
+                }
+                sendLorekeeperMessage(player, Text.literal(line));
+                current.awaitingReaction = false;
+                if (!askNextQuestion(player)) {
+                    sendLorekeeperMessage(player, Text.literal("Our interview is complete."));
+                    endInterview(player);
+                }
+            }));
         return true;
     }
 
@@ -190,13 +216,20 @@ public final class LorekeeperInterviewManager {
         player.sendMessage(Text.literal("Lore Keeper: ").append(message), false);
     }
 
+    private static String pickFallbackReaction(ServerPlayerEntity player) {
+        net.minecraft.util.math.random.Random random = player.getEntityWorld().getRandom();
+        return FALLBACK_REACTIONS.get(random.nextInt(FALLBACK_REACTIONS.size()));
+    }
+
     private static final class InterviewSession {
         private final List<String> questions;
         private int index;
+        private boolean awaitingReaction;
 
         private InterviewSession(List<String> questions) {
             this.questions = questions;
             this.index = 0;
+            this.awaitingReaction = false;
         }
 
         private String currentQuestion() {

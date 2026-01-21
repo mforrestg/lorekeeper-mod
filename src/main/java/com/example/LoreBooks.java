@@ -27,12 +27,20 @@ public final class LoreBooks {
     private LoreBooks() {}
 
     public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long weekNumber) {
-        String content = buildNewsText(entries, weekNumber);
+        return createNewsBook(entries, weekNumber, null);
+    }
+
+    public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long weekNumber, String summary) {
+        String content = buildNewsText(entries, weekNumber, summary);
         return buildBook(buildNewsTitle(weekNumber), "Lorekeeper", content);
     }
 
     public static ItemStack createHistoryBook(List<LoreStorage.LoreEntry> entries) {
-        String content = buildHistoryText(entries);
+        return createHistoryBook(entries, null);
+    }
+
+    public static ItemStack createHistoryBook(List<LoreStorage.LoreEntry> entries, String summary) {
+        String content = buildHistoryText(entries, summary);
         return buildBook("Lorekeeper Archive", "Lorekeeper", content);
     }
 
@@ -87,12 +95,17 @@ public final class LoreBooks {
         return NEWS_TITLE_PREFIX + weekNumber;
     }
 
-    private static String buildNewsText(List<LoreStorage.LoreEntry> entries, long weekNumber) {
+    private static String buildNewsText(List<LoreStorage.LoreEntry> entries, long weekNumber, String summary) {
         StringBuilder builder = new StringBuilder();
         builder.append("THE LOREKEEPER GAZETTE").append("\n");
         builder.append("Week ").append(weekNumber).append(" — ")
             .append(NEWS_HEADER_FORMAT.format(Instant.now())).append("\n");
         builder.append("----------------------------------------").append("\n\n");
+        if (summary != null && !summary.isBlank()) {
+            builder.append("Weekly Summary").append("\n\n");
+            builder.append(summary.trim()).append("\n");
+            return builder.toString().trim();
+        }
         builder.append("Headlines").append("\n\n");
         if (entries.isEmpty()) {
             builder.append("No lore recorded yet.").append("\n");
@@ -104,11 +117,15 @@ public final class LoreBooks {
         return builder.toString().trim();
     }
 
-    private static String buildHistoryText(List<LoreStorage.LoreEntry> entries) {
+    private static String buildHistoryText(List<LoreStorage.LoreEntry> entries, String summary) {
         StringBuilder builder = new StringBuilder();
         builder.append("THE LOREKEEPER ARCHIVE").append("\n");
         builder.append("Compiled ").append(NEWS_HEADER_FORMAT.format(Instant.now())).append("\n");
         builder.append("----------------------------------------").append("\n\n");
+        if (summary != null && !summary.isBlank()) {
+            builder.append(summary.trim()).append("\n");
+            return builder.toString().trim();
+        }
         if (entries.isEmpty()) {
             builder.append("No lore recorded yet.").append("\n");
             return builder.toString().trim();

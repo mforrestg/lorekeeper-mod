@@ -102,9 +102,10 @@ public final class LoreCommand {
             LorekeeperNewsPublisher.publishWeeklyNews(ctx.getSource().getServer(), true);
         long weekNumber = result.weekNumber();
         List<LoreStorage.LoreEntry> entries = result.entries();
+        String aiSummary = result.aiSummary();
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player != null) {
-            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber);
+            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber, aiSummary);
             if (!player.giveItemStack(book)) {
                 ctx.getSource().sendError(Text.literal("Inventory full; couldn't deliver the news book."));
                 return 0;
@@ -113,8 +114,12 @@ public final class LoreCommand {
         } else {
             String header = LoreBooks.formatNewsHeader(weekNumber);
             ctx.getSource().sendFeedback(() -> Text.literal(header), false);
-            for (LoreStorage.LoreEntry entry : entries) {
-                ctx.getSource().sendFeedback(() -> Text.literal(LoreBooks.formatEntry(entry)), false);
+            if (aiSummary != null && !aiSummary.isBlank()) {
+                ctx.getSource().sendFeedback(() -> Text.literal(aiSummary), false);
+            } else {
+                for (LoreStorage.LoreEntry entry : entries) {
+                    ctx.getSource().sendFeedback(() -> Text.literal(LoreBooks.formatEntry(entry)), false);
+                }
             }
         }
 
@@ -225,13 +230,14 @@ public final class LoreCommand {
         long weekNumber = LoreStorage.getCurrentWeek(ctx.getSource().getServer());
         List<LoreStorage.LoreEntry> entries = storage.getNewsSnapshot(weekNumber);
         boolean published = entries != null;
+        String aiSummary = storage.getAiNewsSummary(weekNumber);
         if (entries == null) {
             entries = storage.getLatestEntries(LoreBooks.NEWS_ENTRY_LIMIT);
         }
 
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player != null) {
-            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber);
+            ItemStack book = LoreBooks.createNewsBook(entries, weekNumber, aiSummary);
             if (!player.giveItemStack(book)) {
                 ctx.getSource().sendError(Text.literal("Inventory full; couldn't deliver the preview book."));
                 return 0;
@@ -242,8 +248,12 @@ public final class LoreCommand {
             String header = LoreBooks.formatNewsHeader(weekNumber);
             String suffix = published ? " (published)" : " (preview)";
             ctx.getSource().sendFeedback(() -> Text.literal(header + suffix), false);
-            for (LoreStorage.LoreEntry entry : entries) {
-                ctx.getSource().sendFeedback(() -> Text.literal(LoreBooks.formatEntry(entry)), false);
+            if (aiSummary != null && !aiSummary.isBlank()) {
+                ctx.getSource().sendFeedback(() -> Text.literal(aiSummary), false);
+            } else {
+                for (LoreStorage.LoreEntry entry : entries) {
+                    ctx.getSource().sendFeedback(() -> Text.literal(LoreBooks.formatEntry(entry)), false);
+                }
             }
         }
 

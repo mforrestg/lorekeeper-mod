@@ -13,11 +13,19 @@ public final class LorekeeperConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public boolean aiEnabled = false;
-    public String aiProvider = "none";
-    public String apiBaseUrl = "";
-    public String apiKeyEnv = "LOREKEEPER_AI_API_KEY";
-    public String model = "";
+    public String aiProvider = "openai";
+    public String apiBaseUrl = "https://api.openai.com/v1";
+    public String apiKeyEnv = "OPENAI_API_KEY";
+    public String model = "gpt-4o-mini";
+    public String modelNews = "gpt-4o-mini";
+    public String modelInterview = "gpt-4o-mini";
+    public String modelHistory = "gpt-4o";
     public int requestTimeoutSeconds = 30;
+    public boolean fallbackEnabled = false;
+    public String fallbackProvider = "openai";
+    public String fallbackApiBaseUrl = "";
+    public String fallbackApiKeyEnv = "";
+    public String fallbackModel = "";
 
     public static LorekeeperConfig load() {
         Path path = FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);

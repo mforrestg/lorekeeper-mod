@@ -13,6 +13,7 @@ public final class LorekeeperNewsPublisher {
         boolean alreadyPublished = storage.hasNewsSnapshot(weekNumber);
         List<LoreStorage.LoreEntry> entries =
             storage.getOrCreateNewsSnapshot(weekNumber, LoreBooks.NEWS_ENTRY_LIMIT);
+        String aiSummary = LorekeeperAiService.getOrCreateWeeklySummary(server, weekNumber, entries);
         if (!alreadyPublished && announce) {
             String title = LoreBooks.NEWS_TITLE_PREFIX + weekNumber;
             server.getPlayerManager().broadcast(
@@ -20,8 +21,13 @@ public final class LorekeeperNewsPublisher {
                 false
             );
         }
-        return new PublishResult(weekNumber, entries, alreadyPublished);
+        return new PublishResult(weekNumber, entries, aiSummary, alreadyPublished);
     }
 
-    public record PublishResult(long weekNumber, List<LoreStorage.LoreEntry> entries, boolean alreadyPublished) {}
+    public record PublishResult(
+        long weekNumber,
+        List<LoreStorage.LoreEntry> entries,
+        String aiSummary,
+        boolean alreadyPublished
+    ) {}
 }

@@ -209,6 +209,9 @@ public final class LorekeeperEncounters {
         if (data.isInCombat(player.getUuid(), nowTicks, COMBAT_COOLDOWN_TICKS)) {
             return;
         }
+        if (isLorekeeperPresent(world)) {
+            return;
+        }
         if (isLorekeeperNearby(world, new Vec3d(player.getX(), player.getY(), player.getZ()))) {
             return;
         }
@@ -289,7 +292,7 @@ public final class LorekeeperEncounters {
         Vec3d center = Vec3d.ofCenter(spawnPos);
         lorekeeper.refreshPositionAndAngles(center.x, center.y, center.z, world.getRandom().nextFloat() * 360.0f, 0.0f);
         lorekeeper.setDespawnDelay(DESPAWN_DELAY_TICKS);
-        lorekeeper.setWanderTarget(anchorPos);
+        lorekeeper.setAnchorPos(anchorPos);
         world.spawnEntity(lorekeeper);
         return lorekeeper;
     }
@@ -309,6 +312,13 @@ public final class LorekeeperEncounters {
         return !world.getEntitiesByType(
             TypeFilter.instanceOf(LorekeeperEntity.class),
             entity -> entity.squaredDistanceTo(center) <= radiusSq
+        ).isEmpty();
+    }
+
+    private static boolean isLorekeeperPresent(ServerWorld world) {
+        return !world.getEntitiesByType(
+            TypeFilter.instanceOf(LorekeeperEntity.class),
+            entity -> true
         ).isEmpty();
     }
 
