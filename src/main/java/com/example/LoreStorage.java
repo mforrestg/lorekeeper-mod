@@ -9,16 +9,25 @@ import java.util.Map;
 import net.minecraft.datafixer.DataFixTypes;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateType;
 
 public final class LoreStorage extends PersistentState {
     public static final int MAX_ENTRIES = 1000;
 
+    public static final String DEFAULT_EVENT_TYPE = "log";
+
     private static final Codec<LoreEntry> ENTRY_CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.STRING.fieldOf("text").forGetter(LoreEntry::text),
         Codec.STRING.fieldOf("author").forGetter(LoreEntry::author),
-        Codec.LONG.fieldOf("timestamp").forGetter(LoreEntry::timestamp)
+        Codec.LONG.fieldOf("timestamp").forGetter(LoreEntry::timestamp),
+        Codec.STRING.optionalFieldOf("dimension", "").forGetter(LoreEntry::dimension),
+        Codec.INT.optionalFieldOf("x", 0).forGetter(LoreEntry::x),
+        Codec.INT.optionalFieldOf("y", 0).forGetter(LoreEntry::y),
+        Codec.INT.optionalFieldOf("z", 0).forGetter(LoreEntry::z),
+        Codec.STRING.optionalFieldOf("event_type", DEFAULT_EVENT_TYPE).forGetter(LoreEntry::eventType),
+        Codec.STRING.listOf().optionalFieldOf("tags", List.of()).forGetter(LoreEntry::tags)
     ).apply(instance, LoreEntry::new));
 
     private static final Codec<DailyNews> DAILY_NEWS_CODEC = RecordCodecBuilder.create(instance -> instance.group(
@@ -40,7 +49,11 @@ public final class LoreStorage extends PersistentState {
         Codec.STRING.optionalFieldOf("ai_history_summary", "")
             .forGetter(LoreStorage::getAiHistorySummary),
         Codec.LONG.optionalFieldOf("ai_history_timestamp", 0L)
-            .forGetter(LoreStorage::getAiHistoryTimestamp)
+            .forGetter(LoreStorage::getAiHistoryTimestamp),
+        Codec.LONG.optionalFieldOf("last_auto_publish_week", -1L)
+            .forGetter(LoreStorage::getLastAutoPublishWeek),
+        Codec.LONG.optionalFieldOf("last_auto_publish_day", -1L)
+            .forGetter(LoreStorage::getLastAutoPublishDayFallback)
     ).apply(instance, LoreStorage::new));
 
     public static final PersistentStateType<LoreStorage> STATE_TYPE = new PersistentStateType<>(
@@ -56,9 +69,11 @@ public final class LoreStorage extends PersistentState {
     private int issueCounter;
     private String aiHistorySummary;
     private long aiHistoryTimestamp;
+    private long lastAutoPublishWeek;
+    private final long lastAutoPublishDayFallback;
 
     public LoreStorage() {
-        this(new ArrayList<>(), List.of(), 0, List.of(), "", 0L);
+        this(new ArrayList<>(), List.of(), 0, List.of(), "", 0L, -1L, -1L);
     }
 
     public LoreStorage(
@@ -67,7 +82,9 @@ public final class LoreStorage extends PersistentState {
         int issueCounter,
         List<WeeklySummary> weeklySummaries,
         String aiHistorySummary,
-        long aiHistoryTimestamp
+        long aiHistoryTimestamp,
+        long lastAutoPublishWeek,
+        long lastAutoPublishDayFallback
     ) {
         this.entries = new ArrayList<>(entries);
         this.newsByDay = new LinkedHashMap<>();
@@ -81,6 +98,8 @@ public final class LoreStorage extends PersistentState {
         }
         this.aiHistorySummary = aiHistorySummary == null ? "" : aiHistorySummary;
         this.aiHistoryTimestamp = aiHistoryTimestamp;
+        this.lastAutoPublishWeek = lastAutoPublishWeek;
+        this.lastAutoPublishDayFallback = lastAutoPublishDayFallback;
     }
 
     public static LoreStorage get(MinecraftServer server) {
@@ -107,10 +126,39 @@ public final class LoreStorage extends PersistentState {
     }
 
     public void addEntryText(String text, String author, long timestamp) {
-        addEntry(new LoreEntry(text, author, timestamp));
+        addEntry(new LoreEntry(text, author, timestamp, "", 0, 0, 0, DEFAULT_EVENT_TYPE, List.of()));
     }
 
     public void addEntryTextChunked(String text, String author, long timestamp, int maxChunkLength) {
+        addEntryTextChunked(text, author, timestamp, maxChunkLength, "", 0, 0, 0, DEFAULT_EVENT_TYPE, List.of());
+    }
+
+    public void addEntryText(
+        String text,
+        String author,
+        long timestamp,
+        String dimension,
+        int x,
+        int y,
+        int z,
+        String eventType,
+        List<String> tags
+    ) {
+        addEntry(new LoreEntry(text, author, timestamp, dimension, x, y, z, eventType, safeTags(tags)));
+    }
+
+    public void addEntryTextChunked(
+        String text,
+        String author,
+        long timestamp,
+        int maxChunkLength,
+        String dimension,
+        int x,
+        int y,
+        int z,
+        String eventType,
+        List<String> tags
+    ) {
         String normalized = text.trim();
         if (normalized.isEmpty()) {
             return;
@@ -124,9 +172,44 @@ public final class LoreStorage extends PersistentState {
                     end = split;
                 }
             }
-            addEntry(new LoreEntry(normalized.substring(start, end).trim(), author, timestamp));
+            addEntry(new LoreEntry(
+                normalized.substring(start, end).trim(),
+                author,
+                timestamp,
+                dimension,
+                x,
+                y,
+                z,
+                eventType,
+                safeTags(tags)
+            ));
             start = end;
         }
+    }
+
+    public static LoreEntry buildEntry(
+        String text,
+        String author,
+        long timestamp,
+        ServerWorld world,
+        BlockPos pos,
+        String eventType,
+        List<String> tags
+    ) {
+        String dimension = "";
+        int x = 0;
+        int y = 0;
+        int z = 0;
+        if (world != null) {
+            dimension = world.getRegistryKey().getValue().toString();
+        }
+        if (pos != null) {
+            x = pos.getX();
+            y = pos.getY();
+            z = pos.getZ();
+        }
+        String normalizedEvent = eventType == null || eventType.isBlank() ? DEFAULT_EVENT_TYPE : eventType.trim();
+        return new LoreEntry(text, author, timestamp, dimension, x, y, z, normalizedEvent, safeTags(tags));
     }
 
     public List<LoreEntry> getLatestEntries(int limit) {
@@ -207,6 +290,23 @@ public final class LoreStorage extends PersistentState {
         return aiHistoryTimestamp;
     }
 
+    public long getLastAutoPublishWeek() {
+        if (lastAutoPublishWeek >= 0) {
+            return lastAutoPublishWeek;
+        }
+        if (lastAutoPublishDayFallback >= 0) {
+            return lastAutoPublishDayFallback / 7L;
+        }
+        return lastAutoPublishWeek;
+    }
+
+    public void setLastAutoPublishWeek(long week) {
+        if (lastAutoPublishWeek != week) {
+            lastAutoPublishWeek = week;
+            markDirty();
+        }
+    }
+
     public void setAiHistorySummary(String summary, long timestamp) {
         if (summary == null || summary.isBlank()) {
             return;
@@ -256,7 +356,38 @@ public final class LoreStorage extends PersistentState {
         return issueCounter;
     }
 
-    public record LoreEntry(String text, String author, long timestamp) {}
+    private long getLastAutoPublishDayFallback() {
+        return lastAutoPublishDayFallback;
+    }
+
+    private static List<String> safeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return List.of();
+        }
+        List<String> cleaned = new ArrayList<>();
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            String trimmed = tag.trim();
+            if (!trimmed.isEmpty()) {
+                cleaned.add(trimmed);
+            }
+        }
+        return cleaned.isEmpty() ? List.of() : List.copyOf(cleaned);
+    }
+
+    public record LoreEntry(
+        String text,
+        String author,
+        long timestamp,
+        String dimension,
+        int x,
+        int y,
+        int z,
+        String eventType,
+        List<String> tags
+    ) {}
 
     public record DailyNews(long day, List<LoreEntry> entries) {}
 

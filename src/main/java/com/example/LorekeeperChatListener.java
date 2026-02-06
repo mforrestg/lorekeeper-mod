@@ -9,14 +9,22 @@ public final class LorekeeperChatListener {
     private LorekeeperChatListener() {}
 
     public static void register() {
-        ServerMessageEvents.CHAT_MESSAGE.register(LorekeeperChatListener::onChatMessage);
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register(LorekeeperChatListener::onAllowChatMessage);
     }
 
-    private static void onChatMessage(SignedMessage message, ServerPlayerEntity sender, MessageType.Parameters params) {
+    private static boolean onAllowChatMessage(SignedMessage message, ServerPlayerEntity sender, MessageType.Parameters params) {
         if (sender == null) {
-            return;
+            return true;
         }
         String content = message.getContent().getString();
-        LorekeeperInterviewManager.handleChatAnswer(sender, content);
+        boolean handled = LorekeeperInterviewManager.handleChatAnswer(sender, content);
+        if (!handled) {
+            return true;
+        }
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        if (config != null && config.interviewPrivateResponses) {
+            return false;
+        }
+        return true;
     }
 }

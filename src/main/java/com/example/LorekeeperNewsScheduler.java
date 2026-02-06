@@ -15,10 +15,16 @@ public final class LorekeeperNewsScheduler {
         if (!world.getRegistryKey().equals(World.OVERWORLD)) {
             return;
         }
-        long weekNumber = LoreStorage.getCurrentWeek(world.getServer());
-        if (LoreStorage.get(world.getServer()).hasNewsSnapshot(weekNumber)) {
+        LoreStorage storage = LoreStorage.get(world.getServer());
+        long currentWeek = LoreStorage.getCurrentWeek(world.getServer());
+        long lastAutoPublishWeek = storage.getLastAutoPublishWeek();
+        if (currentWeek <= lastAutoPublishWeek) {
             return;
         }
-        LorekeeperNewsPublisher.publishWeeklyNews(world.getServer(), true);
+        if (currentWeek > 0) {
+            long publishWeek = currentWeek - 1;
+            LorekeeperNewsPublisher.publishWeeklyNews(world.getServer(), publishWeek, true, false);
+        }
+        storage.setLastAutoPublishWeek(currentWeek);
     }
 }

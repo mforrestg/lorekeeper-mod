@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.NbtComponent;
 import net.minecraft.component.type.WrittenBookContentComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -18,6 +19,8 @@ public final class LoreBooks {
     public static final int MAX_LINES_PER_PAGE = 14;
     public static final int MAX_PAGES = 100;
     public static final String NEWS_TITLE_PREFIX = "Lorekeeper Gazette — Week ";
+    public static final String LOREKEEPER_AUTHOR = "Lorekeeper";
+    private static final String LOREKEEPER_MARKER_KEY = "LorekeeperIssued";
 
     private static final DateTimeFormatter NEWS_HEADER_FORMAT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
@@ -27,21 +30,29 @@ public final class LoreBooks {
     private LoreBooks() {}
 
     public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long weekNumber) {
-        return createNewsBook(entries, weekNumber, null);
+        return createNewsBookResult(entries, weekNumber, null).book();
     }
 
     public static ItemStack createNewsBook(List<LoreStorage.LoreEntry> entries, long weekNumber, String summary) {
+        return createNewsBookResult(entries, weekNumber, summary).book();
+    }
+
+    public static BookResult createNewsBookResult(List<LoreStorage.LoreEntry> entries, long weekNumber, String summary) {
         String content = buildNewsText(entries, weekNumber, summary);
-        return buildBook(buildNewsTitle(weekNumber), "Lorekeeper", content);
+        return buildBookResult(buildNewsTitle(weekNumber), LOREKEEPER_AUTHOR, content);
     }
 
     public static ItemStack createHistoryBook(List<LoreStorage.LoreEntry> entries) {
-        return createHistoryBook(entries, null);
+        return createHistoryBookResult(entries, null).book();
     }
 
     public static ItemStack createHistoryBook(List<LoreStorage.LoreEntry> entries, String summary) {
+        return createHistoryBookResult(entries, summary).book();
+    }
+
+    public static BookResult createHistoryBookResult(List<LoreStorage.LoreEntry> entries, String summary) {
         String content = buildHistoryText(entries, summary);
-        return buildBook("Lorekeeper Archive", "Lorekeeper", content);
+        return buildBookResult("Lorekeeper Archive", LOREKEEPER_AUTHOR, content);
     }
 
     public static String formatNewsHeader(long weekNumber) {
@@ -50,7 +61,20 @@ public final class LoreBooks {
 
     public static String formatEntry(LoreStorage.LoreEntry entry) {
         String stamp = NEWS_TIMESTAMP_FORMAT.format(Instant.ofEpochMilli(entry.timestamp()));
-        return "* " + entry.text() + "\n  — " + entry.author() + ", " + stamp;
+        StringBuilder builder = new StringBuilder();
+        builder.append("* ").append(entry.text()).append("\n  — ").append(entry.author()).append(", ").append(stamp);
+        String location = formatLocation(entry);
+        if (!location.isEmpty()) {
+            builder.append(" (").append(location).append(")");
+        }
+        if (entry.eventType() != null && !entry.eventType().isBlank()
+            && !LoreStorage.DEFAULT_EVENT_TYPE.equals(entry.eventType())) {
+            builder.append(" [").append(entry.eventType()).append("]");
+        }
+        if (entry.tags() != null && !entry.tags().isEmpty()) {
+            builder.append(" {").append(String.join(", ", entry.tags())).append("}");
+        }
+        return builder.toString();
     }
 
     public static BookSubmission extractWrittenBook(ItemStack stack) {
@@ -75,9 +99,15 @@ public final class LoreBooks {
     }
 
     private static ItemStack buildBook(String title, String author, String content) {
+        return buildBookResult(title, author, content).book();
+    }
+
+    private static BookResult buildBookResult(String title, String author, String content) {
         List<RawFilteredPair<Text>> pages = buildPages(content);
+        boolean truncated = false;
         if (pages.size() > MAX_PAGES) {
             pages = pages.subList(0, MAX_PAGES);
+            truncated = true;
         }
         WrittenBookContentComponent bookContent = new WrittenBookContentComponent(
             RawFilteredPair.of(title),
@@ -88,7 +118,32 @@ public final class LoreBooks {
         );
         ItemStack book = new ItemStack(Items.WRITTEN_BOOK);
         book.set(DataComponentTypes.WRITTEN_BOOK_CONTENT, bookContent);
-        return book;
+        markLorekeeperBook(book);
+        return new BookResult(book, truncated, pages.size(), MAX_PAGES);
+    }
+
+    public static boolean isLorekeeperBook(ItemStack stack) {
+        if (!stack.isOf(Items.WRITTEN_BOOK)) {
+            return false;
+        }
+        NbtComponent customData = stack.get(DataComponentTypes.CUSTOM_DATA);
+        if (customData != null && customData.copyNbt().getBoolean(LOREKEEPER_MARKER_KEY).orElse(false)) {
+            return true;
+        }
+        WrittenBookContentComponent content = stack.get(DataComponentTypes.WRITTEN_BOOK_CONTENT);
+        if (content == null) {
+            return false;
+        }
+        String title = content.title().raw();
+        String author = content.author();
+        if (LOREKEEPER_AUTHOR.equals(author) && title != null) {
+            return title.equals("Lorekeeper Archive") || title.startsWith(NEWS_TITLE_PREFIX);
+        }
+        return false;
+    }
+
+    private static void markLorekeeperBook(ItemStack book) {
+        NbtComponent.set(DataComponentTypes.CUSTOM_DATA, book, nbt -> nbt.putBoolean(LOREKEEPER_MARKER_KEY, true));
     }
 
     private static String buildNewsTitle(long weekNumber) {
@@ -193,6 +248,41 @@ public final class LoreBooks {
         return lines;
     }
 
+    private static String formatLocation(LoreStorage.LoreEntry entry) {
+        String dimension = entry.dimension();
+        if (dimension == null || dimension.isBlank()) {
+            return "";
+        }
+        String prettyDimension = prettyDimensionName(dimension);
+        return prettyDimension + " @ " + entry.x() + "," + entry.y() + "," + entry.z();
+    }
+
+    private static String prettyDimensionName(String dimension) {
+        if (dimension == null || dimension.isBlank()) {
+            return "";
+        }
+        String trimmed = dimension.trim();
+        if ("minecraft:overworld".equals(trimmed)) {
+            return "Overworld";
+        }
+        if ("minecraft:the_nether".equals(trimmed)) {
+            return "Nether";
+        }
+        if ("minecraft:the_end".equals(trimmed)) {
+            return "The End";
+        }
+        String name = trimmed;
+        int colon = trimmed.indexOf(':');
+        if (colon >= 0 && colon + 1 < trimmed.length()) {
+            name = trimmed.substring(colon + 1);
+        }
+        name = name.replace('_', ' ');
+        if (name.isEmpty()) {
+            return trimmed;
+        }
+        return Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    }
+
     private static void appendWordWithSplit(
         List<String> lines,
         StringBuilder current,
@@ -218,4 +308,6 @@ public final class LoreBooks {
     }
 
     public record BookSubmission(String title, String author, String content) {}
+
+    public record BookResult(ItemStack book, boolean truncated, int pageCount, int maxPages) {}
 }

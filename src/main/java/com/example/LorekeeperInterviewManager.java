@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.ClickEvent;
@@ -21,7 +23,7 @@ public final class LorekeeperInterviewManager {
     private static final List<String> BASIC_QUESTIONS = List.of(
         "What should the archive call you?",
         "Where did your journey begin?",
-        "What brought you to this server?",
+        "What brought you to this land?",
         "What are you hoping to build or discover first?",
         "Do you have any companions or a group you travel with?",
         "What place feels safest to you right now?",
@@ -64,6 +66,10 @@ public final class LorekeeperInterviewManager {
 
     private LorekeeperInterviewManager() {}
 
+    public static void register() {
+        ServerTickEvents.END_SERVER_TICK.register(LorekeeperInterviewManager::onServerTick);
+    }
+
     public static void offerInterview(ServerPlayerEntity player) {
         offerInterview(player, Text.literal("Would you be willing to conduct another interview? "), QuestionPool.MAIN);
     }
@@ -73,6 +79,9 @@ public final class LorekeeperInterviewManager {
     }
 
     public static void offerInterview(ServerPlayerEntity player, Text prompt, QuestionPool pool) {
+        if (isOptedOut(player)) {
+            return;
+        }
         if (ACTIVE.containsKey(player.getUuid())) {
             sendLorekeeperMessage(player, Text.literal("We are already in an interview."));
             return;
@@ -111,13 +120,19 @@ public final class LorekeeperInterviewManager {
     }
 
     public static void startInterview(ServerPlayerEntity player, QuestionPool pool) {
+        if (isOptedOut(player)) {
+            sendLorekeeperMessage(player, Text.literal("Very well. I will not press you for an interview."));
+            return;
+        }
         if (ACTIVE.containsKey(player.getUuid())) {
             sendLorekeeperMessage(player, Text.literal("We are already in an interview."));
             return;
         }
         sendLorekeeperMessage(player, Text.literal("I have a few questions for the archive."));
         List<String> questions = pickQuestions(player, pool);
-        ACTIVE.put(player.getUuid(), new InterviewSession(questions));
+        InterviewSession session = new InterviewSession(questions);
+        session.touch();
+        ACTIVE.put(player.getUuid(), session);
         askNextQuestion(player);
     }
 
@@ -133,6 +148,7 @@ public final class LorekeeperInterviewManager {
         if (trimmed.isEmpty()) {
             return false;
         }
+        session.touch();
         String question = session.currentQuestion();
         if (question == null) {
             endInterview(player);
@@ -142,7 +158,18 @@ public final class LorekeeperInterviewManager {
         ServerWorld world = (ServerWorld) player.getEntityWorld();
         LoreStorage storage = LoreStorage.get(world.getServer());
         String entry = "Interview answer to \"" + question + "\": " + trimmed;
-        storage.addEntryTextChunked(entry, player.getName().getString(), System.currentTimeMillis(), 500);
+        storage.addEntryTextChunked(
+            entry,
+            player.getName().getString(),
+            System.currentTimeMillis(),
+            500,
+            world.getRegistryKey().getValue().toString(),
+            player.getBlockPos().getX(),
+            player.getBlockPos().getY(),
+            player.getBlockPos().getZ(),
+            "interview",
+            List.of("interview", "answer")
+        );
 
         session.advance();
         session.awaitingReaction = true;
@@ -160,6 +187,7 @@ public final class LorekeeperInterviewManager {
                 }
                 sendLorekeeperMessage(player, Text.literal(line));
                 current.awaitingReaction = false;
+                current.touch();
                 if (!askNextQuestion(player)) {
                     sendLorekeeperMessage(player, Text.literal("Our interview is complete."));
                     endInterview(player);
@@ -179,11 +207,25 @@ public final class LorekeeperInterviewManager {
         }
         String line = "Q" + (session.index + 1) + ": " + question;
         sendLorekeeperMessage(player, Text.literal(line));
+        session.touch();
         return true;
     }
 
     private static void endInterview(ServerPlayerEntity player) {
         ACTIVE.remove(player.getUuid());
+    }
+
+    public static boolean stopInterview(ServerPlayerEntity player) {
+        InterviewSession session = ACTIVE.remove(player.getUuid());
+        if (session != null) {
+            sendLorekeeperMessage(player, Text.literal("Interview ended. The archive is grateful."));
+            return true;
+        }
+        return false;
+    }
+
+    public static void clearPending(ServerPlayerEntity player) {
+        PENDING.remove(player.getUuid());
     }
 
     private static List<String> pickQuestions(ServerPlayerEntity player, QuestionPool pool) {
@@ -221,15 +263,59 @@ public final class LorekeeperInterviewManager {
         return FALLBACK_REACTIONS.get(random.nextInt(FALLBACK_REACTIONS.size()));
     }
 
+    private static boolean isOptedOut(ServerPlayerEntity player) {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        if (config != null && !config.interviewAllowOptOut) {
+            return false;
+        }
+        net.minecraft.server.world.ServerWorld world = (net.minecraft.server.world.ServerWorld) player.getEntityWorld();
+        LorekeeperPlayerData data = LorekeeperPlayerData.get(world.getServer());
+        return data.isInterviewOptedOut(player.getUuid());
+    }
+
+    private static void onServerTick(MinecraftServer server) {
+        long timeoutMillis = getTimeoutMillis();
+        if (timeoutMillis <= 0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        ACTIVE.entrySet().removeIf(entry -> {
+            UUID playerId = entry.getKey();
+            InterviewSession session = entry.getValue();
+            if (now - session.lastActivityMillis <= timeoutMillis) {
+                return false;
+            }
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                sendLorekeeperMessage(player, Text.literal("The interview window has passed. We can speak later."));
+            }
+            return true;
+        });
+    }
+
+    private static long getTimeoutMillis() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        int seconds = config != null ? config.interviewTimeoutSeconds : 120;
+        if (seconds <= 0) {
+            return 0L;
+        }
+        return seconds * 1000L;
+    }
+
     private static final class InterviewSession {
         private final List<String> questions;
         private int index;
         private boolean awaitingReaction;
+        private long lastActivityMillis;
 
         private InterviewSession(List<String> questions) {
             this.questions = questions;
             this.index = 0;
             this.awaitingReaction = false;
+        }
+
+        private void touch() {
+            lastActivityMillis = System.currentTimeMillis();
         }
 
         private String currentQuestion() {

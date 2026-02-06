@@ -20,6 +20,8 @@ public final class LorekeeperPlayerData extends PersistentState {
     private static final Codec<LorekeeperPlayerData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Uuids.LINKED_SET_CODEC.optionalFieldOf("encountered", Set.of())
             .forGetter(LorekeeperPlayerData::getEncountered),
+        Uuids.LINKED_SET_CODEC.optionalFieldOf("interview_opt_out", Set.of())
+            .forGetter(LorekeeperPlayerData::getInterviewOptOut),
         Codec.unboundedMap(Uuids.STRING_CODEC, Codec.INT).optionalFieldOf("question_index", Map.of())
             .forGetter(LorekeeperPlayerData::getQuestionIndexMap),
         Codec.unboundedMap(Uuids.STRING_CODEC, Codec.LONG).optionalFieldOf("last_encounter", Map.of())
@@ -38,6 +40,7 @@ public final class LorekeeperPlayerData extends PersistentState {
     );
 
     private final Set<UUID> encountered;
+    private final Set<UUID> interviewOptOut;
     private final Map<UUID, Integer> questionIndexByPlayer;
     private final Map<UUID, Long> lastEncounterByPlayer;
     private final Map<UUID, Set<String>> actionFlagsByPlayer;
@@ -48,17 +51,19 @@ public final class LorekeeperPlayerData extends PersistentState {
     private final Map<UUID, Long> chunkStayTicksByPlayer = new HashMap<>();
 
     public LorekeeperPlayerData() {
-        this(Set.of(), Map.of(), Map.of(), Map.of(), Map.of());
+        this(Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Map.of());
     }
 
     public LorekeeperPlayerData(
         Set<UUID> encountered,
+        Set<UUID> interviewOptOut,
         Map<UUID, Integer> questionIndexByPlayer,
         Map<UUID, Long> lastEncounterByPlayer,
         Map<UUID, List<String>> actionFlagsByPlayer,
         Map<UUID, List<Long>> settlementChunksByPlayer
     ) {
         this.encountered = new HashSet<>(encountered);
+        this.interviewOptOut = new HashSet<>(interviewOptOut);
         this.questionIndexByPlayer = new HashMap<>(questionIndexByPlayer);
         this.lastEncounterByPlayer = new HashMap<>(lastEncounterByPlayer);
         this.actionFlagsByPlayer = new HashMap<>();
@@ -81,6 +86,17 @@ public final class LorekeeperPlayerData extends PersistentState {
 
     public void markEncountered(UUID playerId) {
         if (encountered.add(playerId)) {
+            markDirty();
+        }
+    }
+
+    public boolean isInterviewOptedOut(UUID playerId) {
+        return interviewOptOut.contains(playerId);
+    }
+
+    public void setInterviewOptOut(UUID playerId, boolean optedOut) {
+        boolean changed = optedOut ? interviewOptOut.add(playerId) : interviewOptOut.remove(playerId);
+        if (changed) {
             markDirty();
         }
     }
@@ -180,6 +196,10 @@ public final class LorekeeperPlayerData extends PersistentState {
 
     private Set<UUID> getEncountered() {
         return encountered;
+    }
+
+    private Set<UUID> getInterviewOptOut() {
+        return interviewOptOut;
     }
 
     private Map<UUID, Integer> getQuestionIndexMap() {

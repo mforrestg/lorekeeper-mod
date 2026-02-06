@@ -7,6 +7,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.TradeOutputSlot;
+import net.minecraft.text.Text;
 import net.minecraft.village.Merchant;
 import net.minecraft.village.MerchantInventory;
 import net.minecraft.village.TradeOffer;
@@ -41,6 +42,11 @@ public class TradeOutputSlotMixin {
         }
 
         ItemStack submittedBook = findSubmittedBook();
+        if (LoreBooks.isLorekeeperBook(submittedBook)) {
+            revokePayment(player, stack);
+            player.sendMessage(Text.literal("Lore Keeper: I cannot buy my own writings."), false);
+            return;
+        }
         LoreBooks.BookSubmission submission = LoreBooks.extractWrittenBook(submittedBook);
         if (submission == null || submission.content().trim().isEmpty()) {
             return;
@@ -49,7 +55,18 @@ public class TradeOutputSlotMixin {
         String title = submission.title().isBlank() ? "Untitled" : submission.title();
         String author = submission.author().isBlank() ? "Unknown" : submission.author();
         String entry = "Book Submission: \"" + title + "\" (by " + author + ")\n" + submission.content();
-        storage.addEntryTextChunked(entry, player.getName().getString(), System.currentTimeMillis(), SUBMISSION_CHUNK_LENGTH);
+        storage.addEntryTextChunked(
+            entry,
+            player.getName().getString(),
+            System.currentTimeMillis(),
+            SUBMISSION_CHUNK_LENGTH,
+            serverWorld.getRegistryKey().getValue().toString(),
+            player.getBlockPos().getX(),
+            player.getBlockPos().getY(),
+            player.getBlockPos().getZ(),
+            "book_submission",
+            java.util.List.of("book", "submission")
+        );
     }
 
     private boolean isSubmissionOffer(TradeOffer offer) {
@@ -70,5 +87,35 @@ public class TradeOutputSlotMixin {
             return second;
         }
         return ItemStack.EMPTY;
+    }
+
+    private void revokePayment(PlayerEntity player, ItemStack outputStack) {
+        if (!outputStack.isOf(Items.EMERALD)) {
+            return;
+        }
+        int count = outputStack.getCount();
+        outputStack.setCount(0);
+        int remaining = count;
+        ItemStack cursor = player.currentScreenHandler.getCursorStack();
+        if (cursor.isOf(Items.EMERALD)) {
+            int removed = Math.min(remaining, cursor.getCount());
+            cursor.decrement(removed);
+            remaining -= removed;
+        }
+        if (remaining <= 0) {
+            return;
+        }
+        for (int i = 0; i < player.getInventory().size(); i++) {
+            ItemStack stack = player.getInventory().getStack(i);
+            if (!stack.isOf(Items.EMERALD)) {
+                continue;
+            }
+            int removed = Math.min(remaining, stack.getCount());
+            stack.decrement(removed);
+            remaining -= removed;
+            if (remaining <= 0) {
+                break;
+            }
+        }
     }
 }

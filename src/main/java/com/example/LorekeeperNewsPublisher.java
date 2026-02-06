@@ -8,12 +8,32 @@ public final class LorekeeperNewsPublisher {
     private LorekeeperNewsPublisher() {}
 
     public static PublishResult publishWeeklyNews(MinecraftServer server, boolean announce) {
-        LoreStorage storage = LoreStorage.get(server);
         long weekNumber = LoreStorage.getCurrentWeek(server);
+        return publishWeeklyNews(server, weekNumber, announce, true);
+    }
+
+    public static PublishResult publishWeeklyNews(MinecraftServer server, boolean announce, boolean allowAiSync) {
+        long weekNumber = LoreStorage.getCurrentWeek(server);
+        return publishWeeklyNews(server, weekNumber, announce, allowAiSync);
+    }
+
+    public static PublishResult publishWeeklyNews(MinecraftServer server, long weekNumber, boolean announce) {
+        return publishWeeklyNews(server, weekNumber, announce, true);
+    }
+
+    public static PublishResult publishWeeklyNews(
+        MinecraftServer server,
+        long weekNumber,
+        boolean announce,
+        boolean allowAiSync
+    ) {
+        LoreStorage storage = LoreStorage.get(server);
         boolean alreadyPublished = storage.hasNewsSnapshot(weekNumber);
         List<LoreStorage.LoreEntry> entries =
             storage.getOrCreateNewsSnapshot(weekNumber, LoreBooks.NEWS_ENTRY_LIMIT);
-        String aiSummary = LorekeeperAiService.getOrCreateWeeklySummary(server, weekNumber, entries);
+        String aiSummary = allowAiSync
+            ? LorekeeperAiService.getOrCreateWeeklySummary(server, weekNumber, entries)
+            : LorekeeperAiService.getOrCreateWeeklySummaryNonBlocking(server, weekNumber, entries);
         if (!alreadyPublished && announce) {
             String title = LoreBooks.NEWS_TITLE_PREFIX + weekNumber;
             server.getPlayerManager().broadcast(

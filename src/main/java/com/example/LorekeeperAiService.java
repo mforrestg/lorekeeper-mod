@@ -13,6 +13,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.server.MinecraftServer;
 
 public final class LorekeeperAiService {
@@ -23,6 +26,8 @@ public final class LorekeeperAiService {
         DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
     private static final int MAX_NEWS_INPUT_CHARS = 6000;
     private static final int MAX_HISTORY_INPUT_CHARS = 8000;
+    private static final Set<String> PENDING_NEWS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> PENDING_HISTORY = ConcurrentHashMap.newKeySet();
 
     private LorekeeperAiService() {}
 
@@ -47,6 +52,38 @@ public final class LorekeeperAiService {
         return null;
     }
 
+    public static String getOrCreateWeeklySummaryNonBlocking(
+        MinecraftServer server,
+        long weekNumber,
+        List<LoreStorage.LoreEntry> entries
+    ) {
+        LoreStorage storage = LoreStorage.get(server);
+        String existing = storage.getAiNewsSummary(weekNumber);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
+        if (!isAiEnabled() || entries.isEmpty()) {
+            return null;
+        }
+        String key = "news:" + weekNumber;
+        if (!PENDING_NEWS.add(key)) {
+            return null;
+        }
+        String prompt = buildWeeklyPrompt(weekNumber, entries);
+        CompletableFuture
+            .supplyAsync(() -> requestSummary(prompt, 600, modelForNews()))
+            .thenAccept(summary -> server.execute(() -> {
+                try {
+                    if (summary != null && !summary.isBlank()) {
+                        storage.setAiNewsSummary(weekNumber, summary.trim());
+                    }
+                } finally {
+                    PENDING_NEWS.remove(key);
+                }
+            }));
+        return null;
+    }
+
     public static String getOrCreateHistorySummary(MinecraftServer server, List<LoreStorage.LoreEntry> entries) {
         LoreStorage storage = LoreStorage.get(server);
         long latestTimestamp = storage.getLatestEntryTimestamp();
@@ -66,6 +103,35 @@ public final class LorekeeperAiService {
             storage.setAiHistorySummary(summary.trim(), latestTimestamp);
             return summary.trim();
         }
+        return null;
+    }
+
+    public static String getOrCreateHistorySummaryNonBlocking(MinecraftServer server, List<LoreStorage.LoreEntry> entries) {
+        LoreStorage storage = LoreStorage.get(server);
+        long latestTimestamp = storage.getLatestEntryTimestamp();
+        String existing = storage.getAiHistorySummary();
+        if (!existing.isBlank() && storage.getAiHistoryTimestamp() == latestTimestamp) {
+            return existing;
+        }
+        if (!isAiEnabled() || entries.isEmpty()) {
+            return null;
+        }
+        String key = "history:" + latestTimestamp;
+        if (!PENDING_HISTORY.add(key)) {
+            return null;
+        }
+        String prompt = buildHistoryPrompt(entries);
+        CompletableFuture
+            .supplyAsync(() -> requestSummary(prompt, 1200, modelForHistory()))
+            .thenAccept(summary -> server.execute(() -> {
+                try {
+                    if (summary != null && !summary.isBlank()) {
+                        storage.setAiHistorySummary(summary.trim(), latestTimestamp);
+                    }
+                } finally {
+                    PENDING_HISTORY.remove(key);
+                }
+            }));
         return null;
     }
 

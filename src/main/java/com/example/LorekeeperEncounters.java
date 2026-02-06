@@ -22,14 +22,14 @@ import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 
 public final class LorekeeperEncounters {
-    private static final double NEARBY_RADIUS = 16.0;
-    private static final long ENCOUNTER_COOLDOWN_TICKS = 20L * 60L * 3L;
-    private static final long COMBAT_COOLDOWN_TICKS = 20L * 15L;
-    private static final long CHUNK_STAY_TICKS = 20L * 60L * 5L;
-    private static final int DESPAWN_DELAY_TICKS = 20 * 60 * 10;
-    private static final double LUCK_RAMP_STEP = 0.05;
-    private static final double FIRST_ENCOUNTER_BONUS = 0.20;
-    private static final int MAX_SETTLEMENT_CHUNKS = 48;
+    private static final double DEFAULT_NEARBY_RADIUS = 16.0;
+    private static final int DEFAULT_ENCOUNTER_COOLDOWN_SECONDS = 180;
+    private static final int DEFAULT_COMBAT_COOLDOWN_SECONDS = 15;
+    private static final int DEFAULT_CHUNK_STAY_MINUTES = 5;
+    private static final int DEFAULT_DESPAWN_MINUTES = 10;
+    private static final double DEFAULT_LUCK_RAMP_STEP = 0.05;
+    private static final double DEFAULT_FIRST_ENCOUNTER_BONUS = 0.20;
+    private static final int DEFAULT_MAX_SETTLEMENT_CHUNKS = 48;
 
     private static final Text INTRO_LINE_1 =
         Text.literal("Greetings. I am the Lore Keeper, a local historian.");
@@ -67,7 +67,7 @@ public final class LorekeeperEncounters {
             firstAction = data.markActionFlag(player.getUuid(), ACTION_BREWING_PLACED);
         } else if (trigger == TriggerType.SETTLEMENT_PLACED) {
             long chunkKey = new ChunkPos(pos).toLong();
-            if (!data.registerSettlementChunk(player.getUuid(), chunkKey, MAX_SETTLEMENT_CHUNKS)) {
+            if (!data.registerSettlementChunk(player.getUuid(), chunkKey, getMaxSettlementChunks())) {
                 return;
             }
         }
@@ -103,9 +103,30 @@ public final class LorekeeperEncounters {
         if (destinationKey == World.NETHER) {
             boolean firstAction = data.markActionFlag(player.getUuid(), ACTION_ENTERED_NETHER);
             attemptEncounter(world, player, player.getBlockPos(), TriggerType.ENTER_NETHER, firstAction);
+            String line = firstAction ? "Entered the Nether for the first time." : "Entered the Nether.";
+            LorekeeperMilestones.record(
+                player,
+                line,
+                "world_change",
+                java.util.List.of("nether", firstAction ? "first_time" : "repeat")
+            );
         } else if (destinationKey == World.END) {
             boolean firstAction = data.markActionFlag(player.getUuid(), ACTION_ENTERED_END);
             attemptEncounter(world, player, player.getBlockPos(), TriggerType.ENTER_END, firstAction);
+            String line = firstAction ? "Entered the End for the first time." : "Entered the End.";
+            LorekeeperMilestones.record(
+                player,
+                line,
+                "world_change",
+                java.util.List.of("end", firstAction ? "first_time" : "repeat")
+            );
+        } else if (destinationKey == World.OVERWORLD && origin != null && origin.getRegistryKey() != World.OVERWORLD) {
+            LorekeeperMilestones.record(
+                player,
+                "Returned to the Overworld.",
+                "world_change",
+                java.util.List.of("overworld")
+            );
         }
     }
 
@@ -138,7 +159,7 @@ public final class LorekeeperEncounters {
         for (ServerPlayerEntity player : world.getPlayers()) {
             long chunkKey = player.getChunkPos().toLong();
             long stayTicks = data.updateChunkStay(player.getUuid(), chunkKey);
-            if (stayTicks >= CHUNK_STAY_TICKS) {
+            if (stayTicks >= getChunkStayTicks()) {
                 data.resetChunkStay(player.getUuid());
                 attemptEncounter(world, player, player.getBlockPos(), TriggerType.CHUNK_STAY, false);
             }
@@ -203,10 +224,10 @@ public final class LorekeeperEncounters {
     ) {
         LorekeeperPlayerData data = LorekeeperPlayerData.get(world.getServer());
         long nowTicks = world.getTime();
-        if (data.isOnEncounterCooldown(player.getUuid(), nowTicks, ENCOUNTER_COOLDOWN_TICKS)) {
+        if (data.isOnEncounterCooldown(player.getUuid(), nowTicks, getEncounterCooldownTicks())) {
             return;
         }
-        if (data.isInCombat(player.getUuid(), nowTicks, COMBAT_COOLDOWN_TICKS)) {
+        if (data.isInCombat(player.getUuid(), nowTicks, getCombatCooldownTicks())) {
             return;
         }
         if (isLorekeeperPresent(world)) {
@@ -216,16 +237,17 @@ public final class LorekeeperEncounters {
             return;
         }
 
-        double chance = trigger.baseChance;
+        LorekeeperConfig.EncounterTriggerConfig config = getTriggerConfig(trigger);
+        double chance = config.baseChance;
         if (!data.hasEncountered(player.getUuid())) {
-            chance += FIRST_ENCOUNTER_BONUS;
+            chance += getFirstEncounterBonus();
         }
         if (firstAction) {
-            chance += trigger.firstTimeBonus;
+            chance += config.firstTimeBonus;
         }
-        chance += data.getLuck(player.getUuid()) * LUCK_RAMP_STEP;
-        if (chance > trigger.maxChance) {
-            chance = trigger.maxChance;
+        chance += data.getLuck(player.getUuid()) * getLuckRampStep();
+        if (chance > config.maxChance) {
+            chance = config.maxChance;
         }
         if (chance <= 0.0) {
             return;
@@ -291,7 +313,7 @@ public final class LorekeeperEncounters {
         }
         Vec3d center = Vec3d.ofCenter(spawnPos);
         lorekeeper.refreshPositionAndAngles(center.x, center.y, center.z, world.getRandom().nextFloat() * 360.0f, 0.0f);
-        lorekeeper.setDespawnDelay(DESPAWN_DELAY_TICKS);
+        lorekeeper.setDespawnDelay(getDespawnDelayTicks());
         lorekeeper.setAnchorPos(anchorPos);
         world.spawnEntity(lorekeeper);
         return lorekeeper;
@@ -308,7 +330,8 @@ public final class LorekeeperEncounters {
     }
 
     private static boolean isLorekeeperNearby(ServerWorld world, Vec3d center) {
-        double radiusSq = NEARBY_RADIUS * NEARBY_RADIUS;
+        double radius = getNearbyRadius();
+        double radiusSq = radius * radius;
         return !world.getEntitiesByType(
             TypeFilter.instanceOf(LorekeeperEntity.class),
             entity -> entity.squaredDistanceTo(center) <= radiusSq
@@ -335,28 +358,79 @@ public final class LorekeeperEncounters {
     }
 
     private enum TriggerType {
-        CRAFTING_TABLE_PLACED(0.25, 0.85, 0.10),
-        ENCHANTING_TABLE_PLACED(0.25, 0.85, 0.15),
-        ANVIL_PLACED(0.20, 0.80, 0.10),
-        BREWING_STAND_PLACED(0.20, 0.80, 0.10),
-        SETTLEMENT_PLACED(0.15, 0.70, 0.05),
-        ENCHANTING_TABLE_USED(0.20, 0.80, 0.15),
-        ANVIL_USED(0.20, 0.80, 0.10),
-        BREWING_STAND_USED(0.20, 0.80, 0.10),
-        ENTER_NETHER(0.40, 0.90, 0.20),
-        ENTER_END(0.50, 0.90, 0.25),
-        EQUIP_DIAMOND_PICKAXE(0.30, 0.85, 0.20),
-        EQUIP_NETHERITE(0.35, 0.90, 0.25),
-        CHUNK_STAY(0.20, 0.75, 0.10);
+        CRAFTING_TABLE_PLACED("crafting_table_placed", 0.25, 0.85, 0.10),
+        ENCHANTING_TABLE_PLACED("enchanting_table_placed", 0.25, 0.85, 0.15),
+        ANVIL_PLACED("anvil_placed", 0.20, 0.80, 0.10),
+        BREWING_STAND_PLACED("brewing_stand_placed", 0.20, 0.80, 0.10),
+        SETTLEMENT_PLACED("settlement_placed", 0.15, 0.70, 0.05),
+        ENCHANTING_TABLE_USED("enchanting_table_used", 0.20, 0.80, 0.15),
+        ANVIL_USED("anvil_used", 0.20, 0.80, 0.10),
+        BREWING_STAND_USED("brewing_stand_used", 0.20, 0.80, 0.10),
+        ENTER_NETHER("enter_nether", 0.40, 0.90, 0.20),
+        ENTER_END("enter_end", 0.50, 0.90, 0.25),
+        EQUIP_DIAMOND_PICKAXE("equip_diamond_pickaxe", 0.30, 0.85, 0.20),
+        EQUIP_NETHERITE("equip_netherite", 0.35, 0.90, 0.25),
+        CHUNK_STAY("chunk_stay", 0.20, 0.75, 0.10);
 
-        private final double baseChance;
-        private final double maxChance;
-        private final double firstTimeBonus;
+        private final String id;
+        private final LorekeeperConfig.EncounterTriggerConfig defaults;
 
-        TriggerType(double baseChance, double maxChance, double firstTimeBonus) {
-            this.baseChance = baseChance;
-            this.maxChance = maxChance;
-            this.firstTimeBonus = firstTimeBonus;
+        TriggerType(String id, double baseChance, double maxChance, double firstTimeBonus) {
+            this.id = id;
+            this.defaults = new LorekeeperConfig.EncounterTriggerConfig(baseChance, maxChance, firstTimeBonus);
         }
+    }
+
+    private static LorekeeperConfig.EncounterTriggerConfig getTriggerConfig(TriggerType trigger) {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        if (config == null || config.encounterTriggers == null) {
+            return trigger.defaults;
+        }
+        LorekeeperConfig.EncounterTriggerConfig override = config.encounterTriggers.get(trigger.id);
+        return override != null ? override : trigger.defaults;
+    }
+
+    private static double getNearbyRadius() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        return config != null ? config.encounterNearbyRadius : DEFAULT_NEARBY_RADIUS;
+    }
+
+    private static long getEncounterCooldownTicks() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        int seconds = config != null ? config.encounterCooldownSeconds : DEFAULT_ENCOUNTER_COOLDOWN_SECONDS;
+        return Math.max(0, seconds) * 20L;
+    }
+
+    private static long getCombatCooldownTicks() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        int seconds = config != null ? config.combatCooldownSeconds : DEFAULT_COMBAT_COOLDOWN_SECONDS;
+        return Math.max(0, seconds) * 20L;
+    }
+
+    private static long getChunkStayTicks() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        int minutes = config != null ? config.chunkStayMinutes : DEFAULT_CHUNK_STAY_MINUTES;
+        return Math.max(0, minutes) * 60L * 20L;
+    }
+
+    private static int getDespawnDelayTicks() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        int minutes = config != null ? config.lorekeeperDespawnMinutes : DEFAULT_DESPAWN_MINUTES;
+        return Math.max(0, minutes) * 60 * 20;
+    }
+
+    private static double getLuckRampStep() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        return config != null ? config.luckRampStep : DEFAULT_LUCK_RAMP_STEP;
+    }
+
+    private static double getFirstEncounterBonus() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        return config != null ? config.firstEncounterBonus : DEFAULT_FIRST_ENCOUNTER_BONUS;
+    }
+
+    private static int getMaxSettlementChunks() {
+        LorekeeperConfig config = LorekeeperMod.CONFIG;
+        return config != null ? config.maxSettlementChunks : DEFAULT_MAX_SETTLEMENT_CHUNKS;
     }
 }
